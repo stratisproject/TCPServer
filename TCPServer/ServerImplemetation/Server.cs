@@ -123,7 +123,8 @@ namespace TCPServer
 					{
 						ArrayPool = Options.ArrayPool,
 						Cancellation = _Stopped.Token,
-						MaxArrayLength = Options.MaxBytesArrayLength
+						MaxArrayLength = Options.MaxBytesArrayLength,
+						MaxMessageSize = Options.MaxMessageSize
 					})
 					{
 						var request = await TCPRequest.Parse(stream, Options.IncludeHeaders).ConfigureAwait(false);

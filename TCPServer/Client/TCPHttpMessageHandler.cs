@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using TCPServer;
 using TCPServer.ServerImplemetation;
+using System.Buffers;
 
 namespace TCPServer.Client
 {
@@ -21,12 +22,33 @@ namespace TCPServer.Client
 			get; set;
 		} = true;
 
+		public int MaxMessageSize
+		{
+			get; set;
+		} = 1024 * 1024;
+
+		public int MaxArrayLength
+		{
+			get; set;
+		} = 1024 * 1024;
+
+		public ArrayPool<byte> ArrayPool
+		{
+			get; set;
+		} = ArrayPool<byte>.Shared;
+
 		protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
 		{
 			AssertNotDisposed();
 			var socket = await EnsureConnectedAsync(request.RequestUri, cancellationToken).ConfigureAwait(false);
 			var networkStream = new NetworkStream(socket, false);
-			using(TCPStream tcpStream = new TCPStream(networkStream))
+			using(TCPStream tcpStream = new TCPStream(networkStream)
+			{
+				MaxArrayLength = MaxArrayLength,
+				MaxMessageSize = MaxMessageSize,
+				Cancellation = cancellationToken,
+				ArrayPool = ArrayPool
+			})
 			{
 				await tcpStream.WriteStringAsync(request.Method.Method).ConfigureAwait(false);
 

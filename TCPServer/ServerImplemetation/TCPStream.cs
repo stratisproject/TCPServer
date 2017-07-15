@@ -22,6 +22,11 @@ namespace TCPServer.ServerImplemetation
 			get; set;
 		} = 1024 * 1024;
 
+		public int MaxMessageSize
+		{
+			get; set;
+		} = 1024 * 1024;
+
 		private readonly Stream _Inner;
 		public Stream Inner
 		{
@@ -38,6 +43,7 @@ namespace TCPServer.ServerImplemetation
 
 		public async Task<ulong> ReadVarIntAsync()
 		{
+			AddReaden(1);
 			var b1 = await _Inner.ReadByteAsync(Cancellation).ConfigureAwait(false);
 			if(b1 < 0xFD)
 				return (uint)b1;
@@ -45,6 +51,7 @@ namespace TCPServer.ServerImplemetation
 				return (uint)await ReadUShortAsync().ConfigureAwait(false);
 			if(b1 == 0xFE)
 				return (uint)await ReadUIntAsync().ConfigureAwait(false);
+			AddReaden(8);
 			await _Inner.ReadAsync(_SmallBuffer, 0, 8, Cancellation).ConfigureAwait(false);
 			return (uint)(
 				(_SmallBuffer[0]) + (_SmallBuffer[1] << 8) +
@@ -95,12 +102,14 @@ namespace TCPServer.ServerImplemetation
 		byte[] _SmallBuffer = new byte[8];
 		public async Task<ushort> ReadUShortAsync()
 		{
+			AddReaden(2);
 			await _Inner.ReadAsync(_SmallBuffer, 0, 2, Cancellation).ConfigureAwait(false);
 			return (ushort)(_SmallBuffer[0] + (_SmallBuffer[1] << 8));
 		}
 
 		public async Task<uint> ReadUIntAsync()
 		{
+			AddReaden(4);
 			await _Inner.ReadAsync(_SmallBuffer, 0, 4, Cancellation).ConfigureAwait(false);
 			return (uint)(_SmallBuffer[0] + (_SmallBuffer[1] << 8) + (_SmallBuffer[2] << 16) + (_SmallBuffer[3] << 24));
 		}
@@ -120,7 +129,7 @@ namespace TCPServer.ServerImplemetation
 		public async Task WriteBytesAsync(byte[] bytes)
 		{
 			if(bytes.Length > MaxArrayLength)
-				throw new ArgumentOutOfRangeException("Send array is too big");
+				throw new ArgumentOutOfRangeException("MaxArrayLength");
 			await WriteVarIntAsync((ulong)bytes.Length).ConfigureAwait(false);
 			await _Inner.WriteAsync(bytes, 0, bytes.Length).ConfigureAwait(false);
 		}
@@ -150,8 +159,10 @@ namespace TCPServer.ServerImplemetation
 			if(length == 0)
 				return new ArraySegment<byte>(new byte[0], 0, 0);
 			if(length > (ulong)MaxArrayLength)
-				throw new ArgumentOutOfRangeException("Received array is too big");
-			
+				throw new ArgumentOutOfRangeException();
+
+			AddReaden(length);
+
 			var array = type == ReadType.NewArray ? new byte[(int)length] : ArrayPool<byte>.Shared.Rent((int)length);
 			if(type == ReadType.ManagedPool)
 				_RentedArrays.Add(array);
@@ -159,7 +170,13 @@ namespace TCPServer.ServerImplemetation
 			return new ArraySegment<byte>(array, 0, (int)length);
 		}
 
-
+		ulong totalReaden = 0;
+		private void AddReaden(ulong length)
+		{
+			totalReaden += length;
+			if(totalReaden > (ulong)MaxMessageSize)
+				throw new ArgumentOutOfRangeException("MaxMessageSize");
+		}
 
 		public void ReturnRentedArrays()
 		{

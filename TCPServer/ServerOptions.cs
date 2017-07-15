@@ -50,6 +50,11 @@ namespace TCPServer
 			get; set;
 		} = 1024 * 1024;
 
+		public int MaxMessageSize
+		{
+			get; set;
+		} = 1024 * 1024;
+
 		public ArrayPool<byte> ArrayPool
 		{
 			get; set;
