@@ -111,9 +111,9 @@ namespace TCPServer.ServerImplemetation
 		} = ArrayPool<byte>.Shared;
 
 		Encoding encoding = Encoding.ASCII;
-		public async Task WriteStringAsync(string method)
+		public async Task WriteStringAsync(string str)
 		{
-			var bytes = encoding.GetBytes(method);
+			var bytes = encoding.GetBytes(str);
 			await WriteBytesAsync(bytes).ConfigureAwait(false);
 		}
 

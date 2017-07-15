@@ -31,12 +31,33 @@ namespace TCPServer.Client
 				await tcpStream.WriteStringAsync(request.Method.Method).ConfigureAwait(false);
 
 				await tcpStream.WriteStringAsync(request.RequestUri.AbsoluteUri).ConfigureAwait(false);
-				var mediaType = request.Content?.Headers?.ContentType?.MediaType;
-				await tcpStream.WriteStringAsync(mediaType ?? string.Empty).ConfigureAwait(false);
-				if(mediaType == string.Empty && request.Content != null)
-					throw new InvalidOperationException("Content is present, Content-Type should be set");
+
+				if(IncludeHeaders)
+				{
+					var requestHeaders = request.Headers.ToList();
+					var contentHeaders = request.Content?.Headers.ToList() ?? new List<KeyValuePair<string, IEnumerable<string>>>();
+
+					var headers = requestHeaders.Concat(contentHeaders).SelectMany(h => h.Value.Select(v => new
+					{
+						Key = h.Key,
+						Value = v
+					})).ToList();
+
+					await tcpStream.WriteVarIntAsync((ulong)headers.Count()).ConfigureAwait(false);
+
+					foreach(var header in headers)
+					{
+						await tcpStream.WriteStringAsync(header.Key).ConfigureAwait(false);
+						await tcpStream.WriteStringAsync(header.Value).ConfigureAwait(false);
+					}
+				}
+
+				await tcpStream.WriteVarIntAsync(request.Content == null ? 0UL : 1).ConfigureAwait(false);
 				if(request.Content != null)
+				{
+					await tcpStream.WriteVarIntAsync((ulong)request.Content.Headers.ContentLength).ConfigureAwait(false);
 					await request.Content.CopyToAsync(networkStream).ConfigureAwait(false);
+				}
 				await networkStream.FlushAsync().ConfigureAwait(false);
 
 				return await GetResponseAsync(tcpStream).ConfigureAwait(false);

@@ -75,7 +75,8 @@ namespace TCPServer.ServerImplemetation
 			set
 			{
 				Headers.Remove("Content-Type");
-				Headers.Add("Content-Type", new StringValues(value));
+				if(value != null)
+					Headers.Add("Content-Type", new StringValues(value));
 			}
 		}
 

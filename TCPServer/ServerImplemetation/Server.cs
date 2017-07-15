@@ -126,7 +126,7 @@ namespace TCPServer
 						MaxArrayLength = Options.MaxBytesArrayLength
 					})
 					{
-						var request = await TCPRequest.Parse(stream).ConfigureAwait(false);
+						var request = await TCPRequest.Parse(stream, Options.IncludeHeaders).ConfigureAwait(false);
 
 						var context = (HostingApplication.Context)(object)application.CreateContext(Features);
 

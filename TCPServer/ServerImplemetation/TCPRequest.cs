@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Http;
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -6,6 +7,8 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http.Internal;
+using Microsoft.Extensions.Primitives;
+using System.Globalization;
 
 namespace TCPServer.ServerImplemetation
 {
@@ -16,14 +19,14 @@ namespace TCPServer.ServerImplemetation
 
 		}
 
-		public static async Task<TCPRequest> Parse(TCPStream input)
+		public static async Task<TCPRequest> Parse(TCPStream input, bool includeHeaders)
 		{
 			var r = new TCPRequest();
-			await r.ParseCore(input).ConfigureAwait(false);
+			await r.ParseCore(input, includeHeaders).ConfigureAwait(false);
 			return r;
 		}
 
-		private async Task ParseCore(TCPStream stream)
+		private async Task ParseCore(TCPStream stream, bool includeHeaders)
 		{
 			Method = await stream.ReadStringAync().ConfigureAwait(false);
 			var requestUri = await stream.ReadStringAync().ConfigureAwait(false);
@@ -36,11 +39,30 @@ namespace TCPServer.ServerImplemetation
 			QueryString = new QueryString(uri.Query);
 			Query = new QueryCollection(Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query));
 			Protocol = "http";
-			ContentType = await stream.ReadStringAync().ConfigureAwait(false);
-			if(ContentType != string.Empty)
+
+			if(includeHeaders)
+			{
+				var headers = new List<Tuple<string, string>>();
+				var headersCount = await stream.ReadVarIntAsync().ConfigureAwait(false);
+				for(int i = 0; i < (int)headersCount; i++)
+				{
+					var key = await stream.ReadStringAync().ConfigureAwait(false);
+					var value = await stream.ReadStringAync().ConfigureAwait(false);
+					headers.Add(Tuple.Create(key, value));
+				}
+
+				foreach(var h in headers.GroupBy(g => g.Item1, g => g.Item2))
+				{
+					Headers.Add(h.Key, new StringValues(h.ToArray()));
+				}
+			}
+
+			var hasContent = (await stream.ReadVarIntAsync().ConfigureAwait(false)) == 1;
+			if(hasContent)
 			{
 				var buffer = await stream.ReadBytesAync(TCPStream.ReadType.ManagedPool).ConfigureAwait(false);
 				Body = new MemoryStream(buffer.Array);
+				Body.SetLength(buffer.Count);
 				ContentLength = buffer.Count;
 			}
 		}
@@ -110,13 +132,35 @@ namespace TCPServer.ServerImplemetation
 		} = new RequestCookieCollection();
 		public override long? ContentLength
 		{
-			get;
-			set;
+			get
+			{
+				StringValues value;
+				if(!Headers.TryGetValue("Content-Length", out value))
+					return null;
+				return long.Parse(value.FirstOrDefault(), CultureInfo.InvariantCulture);
+			}
+			set
+			{
+				Headers.Remove("Content-Length");
+				if(value != null)
+					Headers.Add("Content-Length", value.Value.ToString(CultureInfo.InvariantCulture));
+			}
 		}
 		public override string ContentType
 		{
-			get;
-			set;
+			get
+			{
+				StringValues value;
+				if(!Headers.TryGetValue("Content-Type", out value))
+					return null;
+				return value.FirstOrDefault();
+			}
+			set
+			{
+				Headers.Remove("Content-Type");
+				if(value != null)
+					Headers.Add("Content-Type", new StringValues(value));
+			}
 		}
 		public override Stream Body
 		{
