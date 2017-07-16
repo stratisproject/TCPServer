@@ -23,6 +23,10 @@ namespace TCPServer.Tests
 			IWebHost host = CreateHost(true);
 			using(var client = new HttpClient(new TCPHttpMessageHandler()))
 			{
+				var content = client.GetAsync("http://127.0.0.1:29472/v1/nothing").Result.Content;
+				Assert.NotNull(content);
+
+
 				var nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
 				Assert.Equal("\"nico\"", nico);
 				nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico?test=toto").Result.Content.ReadAsStringAsync().Result;
@@ -59,7 +63,7 @@ namespace TCPServer.Tests
 			}
 		}
 
-				private IWebHost CreateHost(bool includeHeader)
+		private IWebHost CreateHost(bool includeHeader)
 		{
 			var host = new WebHostBuilder()
 				.UseStartup<Startup>()

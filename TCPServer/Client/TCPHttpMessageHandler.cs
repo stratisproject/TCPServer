@@ -178,10 +178,10 @@ namespace TCPServer.Client
 			if((int)length > tcpStream.MaxArrayLength)
 				throw new IOException("Server's response is too long");
 			var bodyArray = new byte[(int)length];
-			await tcpStream.Inner.ReadAsync(bodyArray, 0, bodyArray.Length, tcpStream.Cancellation).ConfigureAwait(false);
+			if(length != 0)
+				await tcpStream.Inner.ReadAsync(bodyArray, 0, bodyArray.Length, tcpStream.Cancellation).ConfigureAwait(false);
 			response.Content = new StreamContent(new MemoryStream(bodyArray));
 			response.Content.Headers.ContentLength = (int)length;
-
 			if(IncludeHeaders)
 			{
 				foreach(var g in headersByKey)

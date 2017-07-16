@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace TCPServer.Tests.Controllers
 {
@@ -10,6 +11,14 @@ namespace TCPServer.Tests.Controllers
 		public string Name
 		{
 			get; set;
+		}
+	}
+	public class NoResult : IActionResult
+	{
+		public Task ExecuteResultAsync(ActionContext context)
+		{
+			context.HttpContext.Response.StatusCode = 200;
+			return Task.CompletedTask;
 		}
 	}
 	public class MainController : Controller
@@ -26,6 +35,13 @@ namespace TCPServer.Tests.Controllers
 		public IActionResult HelloJson([FromBody]Request req)
 		{
 			return Json(req.Name);
+		}
+
+		[HttpPost]
+		[Route("v1/nothing")]
+		public IActionResult Nothing([FromBody]Request req)
+		{
+			return new NoResult();
 		}
 
 		[HttpGet]
