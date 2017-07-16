@@ -66,14 +66,14 @@ namespace TCPServer.ServerImplemetation
 			if(num < 0xFD)
 			{
 				_SmallBuffer[0] = (byte)num;
-				await _Inner.WriteAsync(_SmallBuffer, 0, 1);
+				await _Inner.WriteAsync(_SmallBuffer, 0, 1, Cancellation);
 			}
 			else if(num <= ushort.MaxValue)
 			{
 				_SmallBuffer[0] = 0xFD;
 				_SmallBuffer[1] = (byte)num;
 				_SmallBuffer[2] = (byte)(num >> 8);
-				await _Inner.WriteAsync(_SmallBuffer, 0, 3).ConfigureAwait(false);
+				await _Inner.WriteAsync(_SmallBuffer, 0, 3, Cancellation).ConfigureAwait(false);
 			}
 			else if(num <= uint.MaxValue)
 			{
@@ -82,7 +82,7 @@ namespace TCPServer.ServerImplemetation
 				_SmallBuffer[2] = (byte)(num >> 8);
 				_SmallBuffer[3] = (byte)(num >> 16);
 				_SmallBuffer[4] = (byte)(num >> 24);
-				await _Inner.WriteAsync(_SmallBuffer, 0, 5).ConfigureAwait(false);
+				await _Inner.WriteAsync(_SmallBuffer, 0, 5, Cancellation).ConfigureAwait(false);
 			}
 			else
 			{
@@ -95,7 +95,7 @@ namespace TCPServer.ServerImplemetation
 				_SmallBuffer[6] = (byte)(num >> 40);
 				_SmallBuffer[7] = (byte)(num >> 48);
 				_SmallBuffer[8] = (byte)(num >> 56);
-				await _Inner.WriteAsync(_SmallBuffer, 0, 9).ConfigureAwait(false);
+				await _Inner.WriteAsync(_SmallBuffer, 0, 9, Cancellation).ConfigureAwait(false);
 			}
 		}
 
@@ -131,7 +131,7 @@ namespace TCPServer.ServerImplemetation
 			if(bytes.Length > MaxArrayLength)
 				throw new ArgumentOutOfRangeException("MaxArrayLength");
 			await WriteVarIntAsync((ulong)bytes.Length).ConfigureAwait(false);
-			await _Inner.WriteAsync(bytes, 0, bytes.Length).ConfigureAwait(false);
+			await _Inner.WriteAsync(bytes, 0, bytes.Length, Cancellation).ConfigureAwait(false);
 		}
 
 		public async Task<string> ReadStringAync()
@@ -166,7 +166,11 @@ namespace TCPServer.ServerImplemetation
 			var array = type == ReadType.NewArray ? new byte[(int)length] : ArrayPool<byte>.Shared.Rent((int)length);
 			if(type == ReadType.ManagedPool)
 				_RentedArrays.Add(array);
-			await _Inner.ReadAsync(array, 0, (int)length).ConfigureAwait(false);
+
+			int readen = 0;
+			while(readen != (int)length)
+				await _Inner.ReadAsync(array, readen, (int)length - readen, Cancellation).ConfigureAwait(false);
+
 			return new ArraySegment<byte>(array, 0, (int)length);
 		}
 

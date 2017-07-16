@@ -179,7 +179,11 @@ namespace TCPServer.Client
 				throw new IOException("Server's response is too long");
 			var bodyArray = new byte[(int)length];
 			if(length != 0)
-				await tcpStream.Inner.ReadAsync(bodyArray, 0, bodyArray.Length, tcpStream.Cancellation).ConfigureAwait(false);
+			{
+				int readen = 0;
+				while(readen != bodyArray.Length)
+					readen += await tcpStream.Inner.ReadAsync(bodyArray, readen, bodyArray.Length - readen, tcpStream.Cancellation).ConfigureAwait(false);
+			}
 			response.Content = new StreamContent(new MemoryStream(bodyArray));
 			response.Content.Headers.ContentLength = (int)length;
 			if(IncludeHeaders)
