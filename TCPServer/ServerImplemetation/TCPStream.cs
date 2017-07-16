@@ -169,7 +169,7 @@ namespace TCPServer.ServerImplemetation
 
 			int readen = 0;
 			while(readen != (int)length)
-				await _Inner.ReadAsync(array, readen, (int)length - readen, Cancellation).ConfigureAwait(false);
+				readen += await _Inner.ReadAsync(array, readen, (int)length - readen, Cancellation).ConfigureAwait(false);
 
 			return new ArraySegment<byte>(array, 0, (int)length);
 		}
