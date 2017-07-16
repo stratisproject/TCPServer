@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -36,7 +37,29 @@ namespace TCPServer.Tests
 			}
 		}
 
-		private IWebHost CreateHost(bool includeHeader)
+		[Fact]
+		public void CanEvictConnections()
+		{
+			var host = new WebHostBuilder()
+				.UseStartup<Startup>()
+				.UseTCPServer(new ServerOptions(serverBind) { MaxConnections = 1 })
+				.Build();
+			host.Start();
+			var client1Handler = new TCPHttpMessageHandler() { AutoReconnect = false };
+			using(var client1 = new HttpClient(client1Handler))
+			{
+				var nico = client1.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
+				using(var client2 = new HttpClient(new TCPHttpMessageHandler()))
+				{
+					nico = client2.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
+					Assert.Throws<IOException>(() => client1.GetAsync("http://127.0.0.1:29472/v1/hello/nico").GetAwaiter().GetResult());
+					client1Handler.AutoReconnect = true;
+					client1.GetAsync("http://127.0.0.1:29472/v1/hello/nico").GetAwaiter().GetResult();
+				}
+			}
+		}
+
+				private IWebHost CreateHost(bool includeHeader)
 		{
 			var host = new WebHostBuilder()
 				.UseStartup<Startup>()

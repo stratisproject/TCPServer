@@ -19,6 +19,11 @@ namespace TCPServer
 			Backlog = 8;
 		}
 
+		public int MaxConnections
+		{
+			get; set;
+		} = 100;
+
 		public List<SocketOption> SocketOptions
 		{
 			get;

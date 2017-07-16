@@ -96,8 +96,11 @@ namespace TCPServer
 				while(true)
 				{
 					var client = await socket.AcceptAsync(_Stopped.Token).ConfigureAwait(false);
-					_Clients.TryAdd(client, client);
-					ListenClient(client, application);
+					var connectedSocket = new ConnectedSocket(client);
+					_Clients.TryAdd(connectedSocket, connectedSocket);
+					if(Options.MaxConnections < _Clients.Count)
+						await EvictAsync().ConfigureAwait(false);
+					ListenClient(connectedSocket, application);
 					_Stopped.Token.ThrowIfCancellationRequested();
 				}
 			}
@@ -112,10 +115,19 @@ namespace TCPServer
 			}
 		}
 
-		private async Task ListenClient<TContext>(Socket client, IHttpApplication<TContext> application)
+		private Task EvictAsync()
+		{
+			var evicted = _Clients.Keys.OrderBy(o => o.LastReceivedMessage).FirstOrDefault();
+			if(evicted != null)
+				DisconnectClient(evicted);
+			return Task.CompletedTask;
+		}
+
+		private async Task ListenClient<TContext>(ConnectedSocket connectedSocket, IHttpApplication<TContext> application)
 		{
 			try
 			{
+				var client = connectedSocket.Socket;
 				var networkStream = new NetworkStream(client, false);
 				while(true)
 				{
@@ -158,6 +170,7 @@ namespace TCPServer
 						finally
 						{
 							response.OnCompleted();
+							connectedSocket.LastReceivedMessage = DateTimeOffset.UtcNow;
 						}
 					}
 				}
@@ -170,21 +183,42 @@ namespace TCPServer
 			}
 			finally
 			{
-				DisconnectClient(client);
+				DisconnectClient(connectedSocket);
 			}
 		}
 
-		private void DisconnectClient(Socket client)
+		private void DisconnectClient(ConnectedSocket client)
 		{
-			client.AsSafeDisposable().Dispose();
-			Socket unused;
+			client.Socket.AsSafeDisposable().Dispose();
+			ConnectedSocket unused;
 			_Clients.TryRemove(client, out unused);
 		}
 
 		ManualResetEventSlim _AcceptLoopStopped = new ManualResetEventSlim(false);
-		ConcurrentDictionary<Socket, Socket> _Clients = new ConcurrentDictionary<Socket, Socket>();
+		ConcurrentDictionary<ConnectedSocket, ConnectedSocket> _Clients = new ConcurrentDictionary<ConnectedSocket, ConnectedSocket>();
 
+		public class ConnectedSocket
+		{
+			public ConnectedSocket(Socket client)
+			{
+				Socket = client;
+				ConnectedAt = DateTimeOffset.UtcNow;
+				LastReceivedMessage = DateTimeOffset.UtcNow;
+			}
+			public Socket Socket
+			{
+				get; set;
+			}
+			public DateTimeOffset ConnectedAt
+			{
+				get; set;
+			}
 
+			public DateTimeOffset LastReceivedMessage
+			{
+				get; set;
+			}
+		}
 
 	}
 }

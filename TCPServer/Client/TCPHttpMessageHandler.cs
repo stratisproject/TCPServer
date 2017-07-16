@@ -36,10 +36,38 @@ namespace TCPServer.Client
 		{
 			get; set;
 		} = ArrayPool<byte>.Shared;
+		public bool AutoReconnect
+		{
+			get;
+			set;
+		} = true;
 
 		protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
 		{
 			AssertNotDisposed();
+
+			var socket = GetSocket(request.RequestUri);
+			try
+			{
+				return await SendAsyncCore(request, cancellationToken);
+			}
+			catch(IOException)
+			{
+				if(!AutoReconnect)
+					throw;
+			}
+			catch(SocketException)
+			{
+				if(!AutoReconnect)
+					throw;
+			}
+			socket = socket ?? GetSocket(request.RequestUri);
+			Disconnect(socket);
+			return await SendAsyncCore(request, cancellationToken);
+		}
+
+		private async Task<HttpResponseMessage> SendAsyncCore(HttpRequestMessage request, CancellationToken cancellationToken)
+		{
 			var socket = await EnsureConnectedAsync(request.RequestUri, cancellationToken).ConfigureAwait(false);
 			var networkStream = new NetworkStream(socket, false);
 			using(TCPStream tcpStream = new TCPStream(networkStream)
@@ -86,24 +114,44 @@ namespace TCPServer.Client
 			}
 		}
 
-		ConcurrentDictionary<string, Func<Task<Socket>>> _Sockets = new ConcurrentDictionary<string, Func<Task<Socket>>>();
-		ConcurrentBag<Socket> _CreatedSockets = new ConcurrentBag<Socket>();
+		ConcurrentDictionary<IPEndPoint, Socket> _Sockets = new ConcurrentDictionary<IPEndPoint, Socket>();
+
+		private Socket GetSocket(Uri uri)
+		{
+			IPEndPoint endpoint = GetEndpoint(uri);
+			Socket socket = null;
+			_Sockets.TryGetValue(endpoint, out socket);
+			return socket;
+		}
+		private void Disconnect(Socket socket)
+		{
+			Socket existing = null;
+			if(_Sockets.TryRemove((IPEndPoint)socket.RemoteEndPoint, out existing))
+			{
+				if(socket != existing)
+					throw new InvalidOperationException("Bug in TCPHttpMessageHandler, contact developers");
+				socket.AsSafeDisposable().Dispose();
+			}
+		}
+
 		private async Task<Socket> EnsureConnectedAsync(Uri request, CancellationToken cancellationToken)
 		{
-			var key = $"{request.Host}:{request.Port}";
-			var socketFactory = _Sockets.GetOrAdd(key, _ =>
+			var endpoint = GetEndpoint(request);
+			bool createdSocket = false;
+			var socket = _Sockets.GetOrAdd(endpoint, _ =>
 			{
-				var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-				_CreatedSockets.Add(socket);
-				return async () =>
-				{
-					if(socket.Connected)
-						return socket;
-					await socket.ConnectAsync(new IPEndPoint(IPAddress.Parse(request.Host), request.Port), cancellationToken).ConfigureAwait(false);
-					return socket;
-				};
+				var s = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+				createdSocket = true;
+				return s;
 			});
-			return await socketFactory().ConfigureAwait(false);
+			if(createdSocket)
+				await socket.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
+			return socket;
+		}
+
+		private static IPEndPoint GetEndpoint(Uri request)
+		{
+			return new IPEndPoint(IPAddress.Parse(request.Host), request.Port);
 		}
 
 		private async Task<HttpResponseMessage> GetResponseAsync(TCPStream tcpStream)
@@ -151,9 +199,9 @@ namespace TCPServer.Client
 		protected override void Dispose(bool disposing)
 		{
 			AssertNotDisposed();
-			foreach(var socket in _CreatedSockets)
+			foreach(var socket in _Sockets.Values)
 			{
-				socket.AsSafeDisposable().Dispose();
+				Disconnect(socket);
 			}
 			_Disposed = true;
 			base.Dispose(disposing);
