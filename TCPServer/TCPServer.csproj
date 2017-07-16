@@ -1,14 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>netstandard1.4</TargetFramework>
-  </PropertyGroup>
+	<PropertyGroup>
+		<Company>Nicolas Dorier</Company>
+		<Copyright>Copyright © Nicolas Dorier</Copyright>
+		<Description>How to use a TCP server instead of Kestrel</Description>
+		<TargetFramework>netstandard1.4</TargetFramework>
+		<Version>1.0.2.0</Version>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Hosting" Version="1.1.2" />
-    <PackageReference Include="Microsoft.AspNetCore.Hosting.Server.Abstractions" Version="1.1.2" />
-    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="1.1.2" />
-    <PackageReference Include="System.Buffers" Version="4.3.0" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.AspNetCore.Hosting" Version="1.1.2" />
+		<PackageReference Include="Microsoft.AspNetCore.Hosting.Server.Abstractions" Version="1.1.2" />
+		<PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="1.1.2" />
+		<PackageReference Include="System.Buffers" Version="4.3.0" />
+	</ItemGroup>
 
 </Project>
