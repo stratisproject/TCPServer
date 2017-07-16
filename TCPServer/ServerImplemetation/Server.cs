@@ -100,7 +100,7 @@ namespace TCPServer
 					_Clients.TryAdd(connectedSocket, connectedSocket);
 					if(Options.MaxConnections < _Clients.Count)
 						await EvictAsync().ConfigureAwait(false);
-					ListenClient(connectedSocket, application);
+					var unused = ListenClient(connectedSocket, application);
 					_Stopped.Token.ThrowIfCancellationRequested();
 				}
 			}
