@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Tasks;
 using TCPServer;
 using TCPServer.Client;
 using Xunit;
@@ -16,6 +17,18 @@ namespace TCPServer.Tests
 	{
 		IPEndPoint serverBind = new System.Net.IPEndPoint(IPAddress.Parse("0.0.0.0"), 29472);
 		IPEndPoint serverIp = new System.Net.IPEndPoint(IPAddress.Parse("127.0.0.1"), 29472);
+
+		[Fact]
+		public void CanTimeout()
+		{
+			IWebHost host = CreateHost(true);
+			using(var client = new HttpClient(new TCPHttpMessageHandler()))
+			{
+				client.Timeout = TimeSpan.FromSeconds(5);
+
+				Assert.Throws<TaskCanceledException>(() => client.GetAsync("http://127.0.0.1:29472/v1/timeout").GetAwaiter().GetResult());
+			}
+		}
 
 		[Fact]
 		public void CanSetupServer()

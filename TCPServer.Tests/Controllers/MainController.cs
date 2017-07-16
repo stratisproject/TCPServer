@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TCPServer.Tests.Controllers
@@ -48,6 +49,14 @@ namespace TCPServer.Tests.Controllers
 		[Route("v1/badrequest/{hello}")]
 		public IActionResult Bad(string hello)
 		{
+			return BadRequest("boom");
+		}
+
+		[HttpGet]
+		[Route("v1/timeout")]
+		public IActionResult Timeout()
+		{
+			Thread.Sleep(10000);
 			return BadRequest("boom");
 		}
 	}
