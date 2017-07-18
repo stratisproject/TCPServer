@@ -42,6 +42,10 @@ namespace TCPServer.Tests
 					var content = client.GetAsync("http://127.0.0.1:29472/v1/nothing").Result.Content;
 					Assert.NotNull(content);
 
+					//DNS
+					content = client.GetAsync("http://localhost:29472/v1/nothing").Result.Content;
+					Assert.NotNull(content);
+
 
 					var nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
 					Assert.Equal("\"nico\"", nico);

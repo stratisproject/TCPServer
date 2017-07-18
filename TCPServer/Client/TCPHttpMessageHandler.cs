@@ -12,9 +12,59 @@ using System.Threading.Tasks;
 using TCPServer;
 using TCPServer.ServerImplemetation;
 using System.Buffers;
+using System.Runtime.ExceptionServices;
 
 namespace TCPServer.Client
 {
+	public class ConnectionEndpoint
+	{
+		public ConnectionEndpoint(string host, int port)
+		{
+			Host = host;
+			Port = port;
+		}
+
+		public string Host
+		{
+			get; set;
+		}
+		public int Port
+		{
+			get; set;
+		}
+
+		Tuple<string, int> Id()
+		{
+			return Tuple.Create(Host, Port);
+		}
+
+
+		public override bool Equals(object obj)
+		{
+			ConnectionEndpoint item = obj as ConnectionEndpoint;
+			if(item == null)
+				return false;
+			return Id().Equals(item.Id());
+		}
+		public static bool operator ==(ConnectionEndpoint a, ConnectionEndpoint b)
+		{
+			if(System.Object.ReferenceEquals(a, b))
+				return true;
+			if(((object)a == null) || ((object)b == null))
+				return false;
+			return a.Id().Equals(b.Id());
+		}
+
+		public static bool operator !=(ConnectionEndpoint a, ConnectionEndpoint b)
+		{
+			return !(a == b);
+		}
+
+		public override int GetHashCode()
+		{
+			return Id().GetHashCode();
+		}
+	}
 	public class TCPHttpMessageHandler : HttpMessageHandler
 	{
 		public TCPHttpMessageHandler() : this(null)
@@ -102,22 +152,17 @@ namespace TCPServer.Client
 			}
 		}
 
-		ConcurrentDictionary<IPEndPoint, Task<Socket>> _Sockets = new ConcurrentDictionary<IPEndPoint, Task<Socket>>();
+		ConcurrentDictionary<ConnectionEndpoint, Task<Socket>> _Sockets = new ConcurrentDictionary<ConnectionEndpoint, Task<Socket>>();
 
 		private Task<Socket> GetSocket(Uri uri)
 		{
-			IPEndPoint endpoint = GetEndpoint(uri);
+			var endpoint = GetEndpoint(uri);
 			Task<Socket> socket = null;
 			_Sockets.TryGetValue(endpoint, out socket);
 			return socket;
 		}
 
-		private Task DisconnectAsync(Socket socket)
-		{
-			return DisconnectAsync((IPEndPoint)socket.RemoteEndPoint);
-		}
-
-		private async Task DisconnectAsync(IPEndPoint remoteEndPoint)
+		private async Task DisconnectAsync(ConnectionEndpoint remoteEndPoint)
 		{
 			Task<Socket> existing = null;
 			if(_Sockets.TryRemove(remoteEndPoint, out existing))
@@ -155,16 +200,41 @@ namespace TCPServer.Client
 			return await socket.ConfigureAwait(false);
 		}
 
-		protected virtual async Task<Socket> CreateSocket(IPEndPoint endpoint, CancellationToken cancellation)
+		protected virtual async Task<Socket> CreateSocket(ConnectionEndpoint endpoint, CancellationToken cancellation)
 		{
-			Socket s = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-			await s.ConnectAsync(endpoint, cancellation).ConfigureAwait(false);
-			return s;
+			List<IPAddress> possibleAddresses = new List<IPAddress>();
+			IPAddress address;
+			if(!IPAddress.TryParse(endpoint.Host, out address))
+			{
+				foreach(var add in (await Dns.GetHostEntryAsync(endpoint.Host).ConfigureAwait(false)).AddressList)
+				{
+					possibleAddresses.Add(add);
+				}
+				if(possibleAddresses.Count == 0)
+					throw new SocketException(11001); //WSAHOST_NOT_FOUND
+			}
+			else
+				possibleAddresses.Add(address);
+
+			Exception lastException = null;
+			foreach(var possibleAddress in possibleAddresses)
+			{
+				try
+				{
+					Socket s = new Socket(possibleAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+					s.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
+					await s.ConnectAsync(new IPEndPoint(possibleAddress, endpoint.Port), cancellation).ConfigureAwait(false);
+					return s;
+				}
+				catch(Exception ex) { lastException = ex; }
+			}
+			ExceptionDispatchInfo.Capture(lastException).Throw();
+			throw new NotImplementedException("impossible to reach");
 		}
 
-		private static IPEndPoint GetEndpoint(Uri request)
+		protected virtual ConnectionEndpoint GetEndpoint(Uri request)
 		{
-			return new IPEndPoint(IPAddress.Parse(request.Host), request.Port);
+			return new ConnectionEndpoint(request.DnsSafeHost, request.Port);
 		}
 
 		private async Task<HttpResponseMessage> GetResponseAsync(TCPStream tcpStream)
