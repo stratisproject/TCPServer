@@ -131,21 +131,37 @@ namespace TCPServer
 				var networkStream = new NetworkStream(client, false);
 				while(true)
 				{
-					using(var stream = new TCPStream(networkStream)
+					using(var disposables = new	CompositeDisposable())
 					{
-						ArrayPool = Options.ArrayPool,
-						Cancellation = _Stopped.Token,
-						MaxArrayLength = Options.MaxBytesArrayLength,
-						MaxMessageSize = Options.MaxMessageSize
-					})
-					{
+						var stream = new TCPStream(networkStream)
+						{
+							ArrayPool = Options.ArrayPool,
+							Cancellation = _Stopped.Token,
+							MaxArrayLength = Options.MaxBytesArrayLength,
+							MaxMessageSize = Options.MaxMessageSize
+						};
+						disposables.Children.Add(stream);
+						var idleTimeout =new CancellationTokenSource();
+						idleTimeout.CancelAfter(Options.IdleTimeout);
+						disposables.Children.Add(idleTimeout);
+						var linked = CancellationTokenSource.CreateLinkedTokenSource(stream.Cancellation, idleTimeout.Token);
+						disposables.Children.Add(linked);
+						stream.Cancellation = linked.Token;
 						var request = await TCPRequest.Parse(stream, Options.IncludeHeaders).ConfigureAwait(false);
+
+						disposables.Children.Add(connectedSocket.MarkProcessingRequest());
 
 						var context = (HostingApplication.Context)(object)application.CreateContext(Features);
 
 						context.HttpContext = new TCPContext(request, Features, new TCPConnectionInfo(client, _ListeningEndPoint));
 						await application.ProcessRequestAsync((TContext)(object)context);
 
+						CancellationTokenSource sendTimeout = new CancellationTokenSource();
+						sendTimeout.CancelAfter(Options.SendTimeout);
+						disposables.Children.Add(sendTimeout);
+						linked = CancellationTokenSource.CreateLinkedTokenSource(stream.Cancellation, sendTimeout.Token);
+						disposables.Children.Add(linked);
+						stream.Cancellation = linked.Token;
 						var response = (TCPResponse)context.HttpContext.Response;
 						try
 						{
@@ -164,8 +180,8 @@ namespace TCPServer
 							
 							await stream.WriteVarIntAsync((ulong)response.Body.Length);
 							response.Body.Position = 0;
-							await response.Body.CopyToAsync(networkStream).ConfigureAwait(false);
-							await networkStream.FlushAsync().ConfigureAwait(false);
+							await response.Body.CopyToAsync(networkStream, 81920, stream.Cancellation).ConfigureAwait(false);
+							await networkStream.FlushAsync(stream.Cancellation).ConfigureAwait(false);
 						}
 						finally
 						{
@@ -199,6 +215,23 @@ namespace TCPServer
 
 		public class ConnectedSocket
 		{
+			class ProcessingRequest : IDisposable
+			{
+				private ConnectedSocket connectedSocket;
+
+				public ProcessingRequest(ConnectedSocket connectedSocket)
+				{
+					this.connectedSocket = connectedSocket;
+					if(connectedSocket.IsProcessing)
+						throw new InvalidOperationException("Already processing request");
+					connectedSocket.IsProcessing = true;
+				}
+
+				public void Dispose()
+				{
+					connectedSocket.IsProcessing = false;
+				}
+			}
 			public ConnectedSocket(Socket client)
 			{
 				Socket = client;
@@ -214,9 +247,19 @@ namespace TCPServer
 				get; set;
 			}
 
+			public bool IsProcessing
+			{
+				get; set;
+			}
+
 			public DateTimeOffset LastReceivedMessage
 			{
 				get; set;
+			}
+
+			internal IDisposable MarkProcessingRequest()
+			{
+				return new ProcessingRequest(this);
 			}
 		}
 

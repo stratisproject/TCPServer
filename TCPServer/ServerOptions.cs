@@ -45,6 +45,22 @@ namespace TCPServer
 			get; set;
 		}
 
+		/// <summary>
+		/// Maximum time to wait for sending the response bytes to the client
+		/// </summary>
+		public TimeSpan SendTimeout
+		{
+			get; set;
+		} = TimeSpan.FromMinutes(1.0);
+
+		/// <summary>
+		/// Maximum time to wait for a request from the client
+		/// </summary>
+		public TimeSpan IdleTimeout
+		{
+			get; set;
+		} = TimeSpan.FromMinutes(1.0);
+
 		public bool IncludeHeaders
 		{
 			get; set;

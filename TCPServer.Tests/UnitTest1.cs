@@ -21,84 +21,92 @@ namespace TCPServer.Tests
 		[Fact]
 		public void CanTimeout()
 		{
-			IWebHost host = CreateHost(true);
-			using(var client = new HttpClient(new TCPHttpMessageHandler()))
+			using(var host = CreateHost(new ServerOptions(serverBind) { MaxConnections = 1 }))
 			{
-				client.Timeout = TimeSpan.FromSeconds(5);
+				using(var client = new HttpClient(new TCPHttpMessageHandler()))
+				{
+					client.Timeout = TimeSpan.FromSeconds(5);
 
-				Assert.Throws<TaskCanceledException>(() => client.GetAsync("http://127.0.0.1:29472/v1/timeout").GetAwaiter().GetResult());
+					Assert.Throws<TaskCanceledException>(() => client.GetAsync("http://127.0.0.1:29472/v1/timeout").GetAwaiter().GetResult());
+				}
 			}
 		}
 
 		[Fact]
 		public void CanSetupServer()
 		{
-			IWebHost host = CreateHost(true);
-			using(var client = new HttpClient(new TCPHttpMessageHandler()))
+			using(var host = CreateHost(new ServerOptions(serverBind) { MaxConnections = 1 }))
 			{
-				var content = client.GetAsync("http://127.0.0.1:29472/v1/nothing").Result.Content;
-				Assert.NotNull(content);
+				using(var client = new HttpClient(new TCPHttpMessageHandler()))
+				{
+					var content = client.GetAsync("http://127.0.0.1:29472/v1/nothing").Result.Content;
+					Assert.NotNull(content);
 
 
-				var nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
-				Assert.Equal("\"nico\"", nico);
-				nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico?test=toto").Result.Content.ReadAsStringAsync().Result;
-				Assert.Equal("\"nicototo\"", nico);
+					var nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
+					Assert.Equal("\"nico\"", nico);
+					nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico?test=toto").Result.Content.ReadAsStringAsync().Result;
+					Assert.Equal("\"nicototo\"", nico);
 
 
-				var error = Assert.Throws<HttpRequestException>(() => client.GetAsync("http://127.0.0.1:29472/v1/badrequest/nico").Result.EnsureSuccessStatusCode());
-				Assert.Contains("400", error.Message);
+					var error = Assert.Throws<HttpRequestException>(() => client.GetAsync("http://127.0.0.1:29472/v1/badrequest/nico").Result.EnsureSuccessStatusCode());
+					Assert.Contains("400", error.Message);
 
-				nico = client.PostAsync("http://127.0.0.1:29472/v1/hellojson/", new StringContent("{ \"Name\" : \"Nicoo\" }", Encoding.UTF8, "application/json")).Result.Content.ReadAsStringAsync().Result;
-				Assert.Equal("\"Nicoo\"", nico);
+					nico = client.PostAsync("http://127.0.0.1:29472/v1/hellojson/", new StringContent("{ \"Name\" : \"Nicoo\" }", Encoding.UTF8, "application/json")).Result.Content.ReadAsStringAsync().Result;
+					Assert.Equal("\"Nicoo\"", nico);
+				}
 			}
 		}
 
 		[Fact]
 		public void CanEvictConnections()
 		{
-			var host = new WebHostBuilder()
-				.UseStartup<Startup>()
-				.UseTCPServer(new ServerOptions(serverBind) { MaxConnections = 1 })
-				.Build();
-			host.Start();
-			var client1Handler = new TCPHttpMessageHandler() { AutoReconnect = false };
-			using(var client1 = new HttpClient(client1Handler))
+			using(var host = CreateHost(new ServerOptions(serverBind) { MaxConnections = 1 }))
 			{
-				var nico = client1.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
-				using(var client2 = new HttpClient(new TCPHttpMessageHandler()))
+				var client1Handler = new TCPHttpMessageHandler(new ClientOptions() { AutoReconnect = false });
+				using(var client1 = new HttpClient(client1Handler))
 				{
-					nico = client2.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
-					Assert.Throws<IOException>(() => client1.GetAsync("http://127.0.0.1:29472/v1/hello/nico").GetAwaiter().GetResult());
-					client1Handler.AutoReconnect = true;
-					client1.GetAsync("http://127.0.0.1:29472/v1/hello/nico").GetAwaiter().GetResult();
+					var nico = client1.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
+					using(var client2 = new HttpClient(new TCPHttpMessageHandler()))
+					{
+						nico = client2.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
+						Assert.Throws<IOException>(() => client1.GetAsync("http://127.0.0.1:29472/v1/hello/nico").GetAwaiter().GetResult());
+						client1Handler.Options.AutoReconnect = true;
+						client1.GetAsync("http://127.0.0.1:29472/v1/hello/nico").GetAwaiter().GetResult();
+					}
 				}
 			}
 		}
 
-		private IWebHost CreateHost(bool includeHeader)
+		private IWebHost CreateHost(ServerOptions options)
 		{
-			var host = new WebHostBuilder()
-				.UseStartup<Startup>()
-				.UseTCPServer(new ServerOptions(serverBind) { IncludeHeaders = includeHeader })
-				.Build();
-			host.Start();
+			var host = Utils.TryUntilMakeIt(() =>
+			{
+				var h = new WebHostBuilder()
+					.UseStartup<Startup>()
+					.UseTCPServer(options)
+					.Build();
+				h.Start();
+				return h;
+			});
 			return host;
 		}
 
 		[Fact]
 		public void CanSetupServerNoHeader()
 		{
-			IWebHost host = CreateHost(false);
-			var client = new HttpClient(new TCPHttpMessageHandler() { IncludeHeaders = false });
-			var nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsByteArrayAsync().Result;
-			Assert.Equal(6, nico.Length);
-			nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico?test=toto").Result.Content.ReadAsByteArrayAsync().Result;
-			Assert.Equal(10, nico.Length);
+			using(var host = CreateHost(new ServerOptions(serverBind) { MaxConnections = 1, IncludeHeaders = false }))
+			{
+				var client = new HttpClient(new TCPHttpMessageHandler(new ClientOptions() { IncludeHeaders = false }));
+				var nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsByteArrayAsync().Result;
+				Assert.Equal(6, nico.Length);
+				nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico?test=toto").Result.Content.ReadAsByteArrayAsync().Result;
+				Assert.Equal(10, nico.Length);
 
 
-			var error = Assert.Throws<HttpRequestException>(() => client.GetAsync("http://127.0.0.1:29472/v1/badrequest/nico").Result.EnsureSuccessStatusCode());
-			Assert.Contains("400", error.Message);
+				var error = Assert.Throws<HttpRequestException>(() => client.GetAsync("http://127.0.0.1:29472/v1/badrequest/nico").Result.EnsureSuccessStatusCode());
+				Assert.Contains("400", error.Message);
+			}
 		}
 	}
 }

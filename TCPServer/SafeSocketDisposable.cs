@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
 
-namespace TCPServer.ServerImplemetation
+namespace TCPServer
 {
 	class SafeSocketDisposable : IDisposable
 	{

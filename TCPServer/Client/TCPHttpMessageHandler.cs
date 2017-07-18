@@ -17,30 +17,19 @@ namespace TCPServer.Client
 {
 	public class TCPHttpMessageHandler : HttpMessageHandler
 	{
-		public bool IncludeHeaders
+		public TCPHttpMessageHandler() : this(null)
 		{
-			get; set;
-		} = true;
 
-		public int MaxMessageSize
+		}
+		public TCPHttpMessageHandler(ClientOptions options)
+		{
+			options = options ?? new ClientOptions();
+			Options = options;
+		}
+		public ClientOptions Options
 		{
 			get; set;
-		} = 1024 * 1024;
-
-		public int MaxArrayLength
-		{
-			get; set;
-		} = 1024 * 1024;
-
-		public ArrayPool<byte> ArrayPool
-		{
-			get; set;
-		} = ArrayPool<byte>.Shared;
-		public bool AutoReconnect
-		{
-			get;
-			set;
-		} = true;
+		}
 
 		protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
 		{
@@ -53,12 +42,12 @@ namespace TCPServer.Client
 			}
 			catch(IOException)
 			{
-				if(!AutoReconnect)
+				if(!Options.AutoReconnect)
 					throw;
 			}
 			catch(SocketException)
 			{
-				if(!AutoReconnect)
+				if(!Options.AutoReconnect)
 					throw;
 			}
 			socket = socket ?? GetSocket(request.RequestUri);
@@ -72,17 +61,17 @@ namespace TCPServer.Client
 			var networkStream = new NetworkStream(socket, false);
 			using(TCPStream tcpStream = new TCPStream(networkStream)
 			{
-				MaxArrayLength = MaxArrayLength,
-				MaxMessageSize = MaxMessageSize,
+				MaxArrayLength = Options.MaxArrayLength,
+				MaxMessageSize = Options.MaxMessageSize,
 				Cancellation = cancellationToken,
-				ArrayPool = ArrayPool
+				ArrayPool = Options.ArrayPool
 			})
 			{
 				await tcpStream.WriteStringAsync(request.Method.Method).ConfigureAwait(false);
 
 				await tcpStream.WriteStringAsync(request.RequestUri.AbsoluteUri).ConfigureAwait(false);
 
-				if(IncludeHeaders)
+				if(Options.IncludeHeaders)
 				{
 					var requestHeaders = request.Headers.ToList();
 					var contentHeaders = request.Content?.Headers.ToList() ?? new List<KeyValuePair<string, IEnumerable<string>>>();
@@ -106,9 +95,9 @@ namespace TCPServer.Client
 				if(request.Content != null)
 				{
 					await tcpStream.WriteVarIntAsync((ulong)request.Content.Headers.ContentLength).ConfigureAwait(false);
-					await request.Content.CopyToAsync(networkStream).ConfigureAwait(false);
+					await (await request.Content.ReadAsStreamAsync().ConfigureAwait(false)).CopyToAsync(networkStream, 81920, cancellationToken).ConfigureAwait(false);
 				}
-				await networkStream.FlushAsync().ConfigureAwait(false);
+				await networkStream.FlushAsync(cancellationToken).ConfigureAwait(false);
 
 				return await GetResponseAsync(tcpStream).ConfigureAwait(false);
 			}
@@ -145,7 +134,15 @@ namespace TCPServer.Client
 				return s;
 			});
 			if(createdSocket)
-				await socket.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
+			{
+				using(var disposables = new CompositeDisposable())
+				{
+					CancellationTokenSource connectTimeout = new CancellationTokenSource();
+					connectTimeout.CancelAfter(Options.ConnectTimeout);
+					var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, connectTimeout.Token);
+					await socket.ConnectAsync(endpoint, linked.Token).ConfigureAwait(false);
+				}
+			}
 			return socket;
 		}
 
@@ -162,7 +159,7 @@ namespace TCPServer.Client
 			};
 
 			List<Tuple<string, string>> headers = new List<Tuple<string, string>>();
-			if(IncludeHeaders)
+			if(Options.IncludeHeaders)
 			{
 				var headersCount = await tcpStream.ReadVarIntAsync().ConfigureAwait(false);
 				for(int i = 0; i < (int)headersCount; i++)
@@ -186,7 +183,7 @@ namespace TCPServer.Client
 			}
 			response.Content = new StreamContent(new MemoryStream(bodyArray));
 			response.Content.Headers.ContentLength = (int)length;
-			if(IncludeHeaders)
+			if(Options.IncludeHeaders)
 			{
 				foreach(var g in headersByKey)
 				{
