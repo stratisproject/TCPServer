@@ -81,6 +81,8 @@ namespace TCPServer.Client
 			get; set;
 		}
 
+		CancellationTokenSource _DisposedToken = new CancellationTokenSource();
+
 		protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
 		{
 			AssertNotDisposed();
@@ -106,49 +108,53 @@ namespace TCPServer.Client
 
 		private async Task<HttpResponseMessage> SendAsyncCore(HttpRequestMessage request, CancellationToken cancellationToken)
 		{
-			var socket = await EnsureConnectedAsync(request.RequestUri, cancellationToken).ConfigureAwait(false);
-			var networkStream = new NetworkStream(socket, false);
-			using(TCPStream tcpStream = new TCPStream(networkStream)
+			using(var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _DisposedToken.Token))
 			{
-				MaxArrayLength = Options.MaxArrayLength,
-				MaxMessageSize = Options.MaxMessageSize,
-				Cancellation = cancellationToken,
-				ArrayPool = Options.ArrayPool
-			})
-			{
-				await tcpStream.WriteStringAsync(request.Method.Method).ConfigureAwait(false);
-
-				await tcpStream.WriteStringAsync(request.RequestUri.AbsoluteUri).ConfigureAwait(false);
-
-				if(Options.IncludeHeaders)
+				cancellationToken = linked.Token;
+				var socket = await EnsureConnectedAsync(request.RequestUri, cancellationToken).ConfigureAwait(false);
+				var networkStream = new NetworkStream(socket, false);
+				using(TCPStream tcpStream = new TCPStream(networkStream)
 				{
-					var requestHeaders = request.Headers.ToList();
-					var contentHeaders = request.Content?.Headers.ToList() ?? new List<KeyValuePair<string, IEnumerable<string>>>();
+					MaxArrayLength = Options.MaxArrayLength,
+					MaxMessageSize = Options.MaxMessageSize,
+					Cancellation = cancellationToken,
+					ArrayPool = Options.ArrayPool
+				})
+				{
+					await tcpStream.WriteStringAsync(request.Method.Method).ConfigureAwait(false);
 
-					var headers = requestHeaders.Concat(contentHeaders).SelectMany(h => h.Value.Select(v => new
+					await tcpStream.WriteStringAsync(request.RequestUri.AbsoluteUri).ConfigureAwait(false);
+
+					if(Options.IncludeHeaders)
 					{
-						Key = h.Key,
-						Value = v
-					})).ToList();
+						var requestHeaders = request.Headers.ToList();
+						var contentHeaders = request.Content?.Headers.ToList() ?? new List<KeyValuePair<string, IEnumerable<string>>>();
 
-					await tcpStream.WriteVarIntAsync((ulong)headers.Count()).ConfigureAwait(false);
+						var headers = requestHeaders.Concat(contentHeaders).SelectMany(h => h.Value.Select(v => new
+						{
+							Key = h.Key,
+							Value = v
+						})).ToList();
 
-					foreach(var header in headers)
-					{
-						await tcpStream.WriteStringAsync(header.Key).ConfigureAwait(false);
-						await tcpStream.WriteStringAsync(header.Value).ConfigureAwait(false);
+						await tcpStream.WriteVarIntAsync((ulong)headers.Count()).ConfigureAwait(false);
+
+						foreach(var header in headers)
+						{
+							await tcpStream.WriteStringAsync(header.Key).ConfigureAwait(false);
+							await tcpStream.WriteStringAsync(header.Value).ConfigureAwait(false);
+						}
 					}
-				}
 
-				await tcpStream.WriteVarIntAsync(request.Content == null ? 0UL : 1).ConfigureAwait(false);
-				if(request.Content != null)
-				{
-					await tcpStream.WriteVarIntAsync((ulong)request.Content.Headers.ContentLength).ConfigureAwait(false);
-					await (await request.Content.ReadAsStreamAsync().ConfigureAwait(false)).CopyToAsync(networkStream, 81920, cancellationToken).ConfigureAwait(false);
-				}
-				await networkStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+					await tcpStream.WriteVarIntAsync(request.Content == null ? 0UL : 1).ConfigureAwait(false);
+					if(request.Content != null)
+					{
+						await tcpStream.WriteVarIntAsync((ulong)request.Content.Headers.ContentLength).ConfigureAwait(false);
+						await (await request.Content.ReadAsStreamAsync().ConfigureAwait(false)).CopyToAsync(networkStream, 81920, cancellationToken).ConfigureAwait(false);
+					}
+					await networkStream.FlushAsync(cancellationToken).ConfigureAwait(false);
 
-				return await GetResponseAsync(tcpStream).ConfigureAwait(false);
+					return await GetResponseAsync(tcpStream).ConfigureAwait(false);
+				}
 			}
 		}
 
@@ -287,6 +293,7 @@ namespace TCPServer.Client
 		{
 			AssertNotDisposed();
 			_Disposed = true;
+			_DisposedToken.Cancel();
 			foreach(var socket in _Sockets.Values)
 			{
 				try
