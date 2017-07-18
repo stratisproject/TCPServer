@@ -5,7 +5,7 @@
 		<Copyright>Copyright © Nicolas Dorier</Copyright>
 		<Description>For replacing Kestrel by a simpler TCP server</Description>
 		<TargetFramework>netstandard1.4</TargetFramework>
-		<Version>1.0.6.0</Version>
+		<Version>1.0.7.0</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
