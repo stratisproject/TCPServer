@@ -16,11 +16,11 @@ Usage:
 
 Create and run a server:
 ```
-private IWebHost CreateHost(bool includeHeader)
+private IWebHost CreateHost()
 {
 	var host = new WebHostBuilder()
 		.UseStartup<Startup>()
-		.UseTCPServer(new ServerOptions(new IPEndPoint(IPAddress.Parse("0.0.0.0"), 29472)) { IncludeHeaders = includeHeader })
+		.UseTCPServer(new ServerOptions(new IPEndPoint(IPAddress.Parse("0.0.0.0"), 29472)))
 		.Build();
 	host.Start();
 	return host;
