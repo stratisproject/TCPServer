@@ -30,7 +30,7 @@ private IWebHost CreateHost()
 How to call it with HttpClient:
 
 ```
-IWebHost host = CreateHost(true);
+IWebHost host = CreateHost();
 using(var client = new HttpClient(new TCPHttpMessageHandler()))
 {
 	var nico = client.GetAsync("http://127.0.0.1:29472/v1/hello/nico").Result.Content.ReadAsStringAsync().Result;
