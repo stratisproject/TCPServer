@@ -20,7 +20,7 @@ private IWebHost CreateHost(bool includeHeader)
 {
 	var host = new WebHostBuilder()
 		.UseStartup<Startup>()
-		.UseTCPServer(new ServerOptions(serverBind) { IncludeHeaders = includeHeader })
+		.UseTCPServer(new ServerOptions(new IPEndPoint(IPAddress.Parse("0.0.0.0"), 29472)) { IncludeHeaders = includeHeader })
 		.Build();
 	host.Start();
 	return host;
