@@ -130,7 +130,7 @@ namespace TCPServer
 
 		private async Task ListenClient<TContext>(ConnectedSocket connectedSocket, IHttpApplication<TContext> application)
 		{
-			bool exceptionLogged = false;
+			bool exceptionHandled = false;
 			try
 			{
 				var client = connectedSocket.Socket;
@@ -153,7 +153,17 @@ namespace TCPServer
 						var linked = CancellationTokenSource.CreateLinkedTokenSource(stream.Cancellation, idleTimeout.Token);
 						disposables.Children.Add(linked);
 						stream.Cancellation = linked.Token;
-						var request = await TCPRequest.Parse(stream, Options.IncludeHeaders).ConfigureAwait(false);
+						TCPRequest request = null;
+						try
+						{
+							request = await TCPRequest.Parse(stream, Options.IncludeHeaders).ConfigureAwait(false);
+						}
+						catch
+						{
+							//Badly formatted request, just disconnect
+							exceptionHandled = true;
+							throw;
+						}
 
 						disposables.Children.Add(connectedSocket.MarkProcessingRequest());
 
@@ -167,7 +177,7 @@ namespace TCPServer
 						catch(Exception ex)
 						{
 							LogProcessingException(ex);
-							exceptionLogged = true;
+							exceptionHandled = true;
 							throw;
 						}
 
@@ -211,14 +221,14 @@ namespace TCPServer
 			{
 				if(!_Stopped.IsCancellationRequested)
 				{
-					if(!exceptionLogged)
+					if(!exceptionHandled && connectedSocket.Socket.Connected)
 						LogException(ex);
 					throw;
 				}
 			}
 			catch(Exception ex)
 			{
-				if(!exceptionLogged)
+				if(!exceptionHandled && connectedSocket.Socket.Connected)
 					LogException(ex);
 				throw;
 			}
