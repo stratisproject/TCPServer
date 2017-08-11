@@ -4,6 +4,7 @@ using System;
 using Microsoft.AspNetCore.Http.Features;
 using System.Net.Sockets;
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Threading;
@@ -15,6 +16,7 @@ using Microsoft.AspNetCore.Http;
 using System.IO;
 using Microsoft.AspNetCore.Hosting.Internal;
 using TCPServer.ServerImplemetation;
+using Microsoft.Extensions.Logging;
 
 namespace TCPServer
 {
@@ -35,8 +37,11 @@ namespace TCPServer
 			Features.Set<IHttpResponseFeature>(new HttpResponseFeature());
 			Features.Set<IServerAddressesFeature>(serverAddressesFeature);
 			Features.Set<IServiceProvidersFeature>(new ServiceProvidersFeature() { RequestServices = serviceProvider });
+
+			_Logger = serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("TCPServer");
 		}
 
+		ILogger _Logger;
 
 		private readonly ServerOptions _Options;
 		public ServerOptions Options
@@ -125,13 +130,14 @@ namespace TCPServer
 
 		private async Task ListenClient<TContext>(ConnectedSocket connectedSocket, IHttpApplication<TContext> application)
 		{
+			bool exceptionLogged = false;
 			try
 			{
 				var client = connectedSocket.Socket;
 				var networkStream = new NetworkStream(client, false);
 				while(true)
 				{
-					using(var disposables = new	CompositeDisposable())
+					using(var disposables = new CompositeDisposable())
 					{
 						var stream = new TCPStream(networkStream)
 						{
@@ -141,7 +147,7 @@ namespace TCPServer
 							MaxMessageSize = Options.MaxMessageSize
 						};
 						disposables.Children.Add(stream);
-						var idleTimeout =new CancellationTokenSource();
+						var idleTimeout = new CancellationTokenSource();
 						idleTimeout.CancelAfter(Options.IdleTimeout);
 						disposables.Children.Add(idleTimeout);
 						var linked = CancellationTokenSource.CreateLinkedTokenSource(stream.Cancellation, idleTimeout.Token);
@@ -154,7 +160,16 @@ namespace TCPServer
 						var context = (HostingApplication.Context)(object)application.CreateContext(Features);
 
 						context.HttpContext = new TCPContext(request, Features, new TCPConnectionInfo(client, _ListeningEndPoint));
-						await application.ProcessRequestAsync((TContext)(object)context);
+						try
+						{
+							await application.ProcessRequestAsync((TContext)(object)context);
+						}
+						catch(Exception ex)
+						{
+							LogProcessingException(ex);
+							exceptionLogged = true;
+							throw;
+						}
 
 						CancellationTokenSource sendTimeout = new CancellationTokenSource();
 						sendTimeout.CancelAfter(Options.SendTimeout);
@@ -177,7 +192,7 @@ namespace TCPServer
 									await stream.WriteStringAsync(header.Value).ConfigureAwait(false);
 								}
 							}
-							
+
 							await stream.WriteVarIntAsync((ulong)response.Body.Length);
 							response.Body.Position = 0;
 							await response.Body.CopyToAsync(networkStream, 81920, stream.Cancellation).ConfigureAwait(false);
@@ -192,15 +207,35 @@ namespace TCPServer
 				}
 
 			}
-			catch(OperationCanceledException)
+			catch(OperationCanceledException ex)
 			{
 				if(!_Stopped.IsCancellationRequested)
+				{
+					if(!exceptionLogged)
+						LogException(ex);
 					throw;
+				}
+			}
+			catch(Exception ex)
+			{
+				if(!exceptionLogged)
+					LogException(ex);
+				throw;
 			}
 			finally
 			{
 				DisconnectClient(connectedSocket);
 			}
+		}
+
+		private void LogProcessingException(Exception ex)
+		{
+			_Logger.LogWarning(new EventId(), ex, "Error during request processing");
+		}
+
+		private void LogException(Exception ex)
+		{
+			_Logger.LogError(new EventId(), ex, "TCPServer internal error");
 		}
 
 		private void DisconnectClient(ConnectedSocket client)
