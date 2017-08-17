@@ -131,6 +131,8 @@ namespace TCPServer
 		private async Task ListenClient<TContext>(ConnectedSocket connectedSocket, IHttpApplication<TContext> application)
 		{
 			bool exceptionHandled = false;
+			CancellationTokenSource idleTimeout = null;
+			CancellationTokenSource sendTimeout = null;
 			try
 			{
 				var client = connectedSocket.Socket;
@@ -147,7 +149,7 @@ namespace TCPServer
 							MaxMessageSize = Options.MaxMessageSize
 						};
 						disposables.Children.Add(stream);
-						var idleTimeout = new CancellationTokenSource();
+						idleTimeout = new CancellationTokenSource();
 						idleTimeout.CancelAfter(Options.IdleTimeout);
 						disposables.Children.Add(idleTimeout);
 						var linked = CancellationTokenSource.CreateLinkedTokenSource(stream.Cancellation, idleTimeout.Token);
@@ -158,9 +160,10 @@ namespace TCPServer
 						{
 							request = await TCPRequest.Parse(stream, Options.IncludeHeaders).ConfigureAwait(false);
 						}
-						catch
+						catch(Exception ex)
 						{
-							//Badly formatted request, just disconnect
+
+							_Logger.LogWarning(new EventId(), ex, $"Error while parsing the request of {EndpointString(connectedSocket)}");
 							exceptionHandled = true;
 							throw;
 						}
@@ -176,12 +179,12 @@ namespace TCPServer
 						}
 						catch(Exception ex)
 						{
-							LogProcessingException(ex);
+							_Logger.LogError(new EventId(), ex, "Error during request processing");
 							exceptionHandled = true;
 							throw;
 						}
 
-						CancellationTokenSource sendTimeout = new CancellationTokenSource();
+						sendTimeout = new CancellationTokenSource();
 						sendTimeout.CancelAfter(Options.SendTimeout);
 						disposables.Children.Add(sendTimeout);
 						linked = CancellationTokenSource.CreateLinkedTokenSource(stream.Cancellation, sendTimeout.Token);
@@ -219,33 +222,41 @@ namespace TCPServer
 			}
 			catch(OperationCanceledException ex)
 			{
-				if(!_Stopped.IsCancellationRequested)
+				if(connectedSocket.Socket.Connected)
 				{
-					if(!exceptionHandled && connectedSocket.Socket.Connected)
-						LogException(ex);
-					throw;
+					if(_Stopped.Token.IsCancellationRequested)
+					{
+						_Logger.LogInformation($"Connection to {EndpointString(connectedSocket)} stopped");
+					}
+					else if(idleTimeout != null && idleTimeout.IsCancellationRequested)
+					{
+						_Logger.LogWarning($"Connection idle detected, kicking {EndpointString(connectedSocket)}");
+					}
+					else if(sendTimeout != null && sendTimeout.IsCancellationRequested)
+					{
+						_Logger.LogWarning($"Send timeout detected, kicking {EndpointString(connectedSocket)}");
+					}
 				}
 			}
 			catch(Exception ex)
 			{
-				if(!exceptionHandled && connectedSocket.Socket.Connected)
-					LogException(ex);
-				throw;
+				if(connectedSocket.Socket.Connected && !exceptionHandled)
+					_Logger.LogCritical(new EventId(), ex, "TCPServer internal error");
 			}
 			finally
 			{
+				if(!connectedSocket.Socket.Connected)
+				{
+					_Logger.LogInformation($"{EndpointString(connectedSocket)} dropped connection");
+				}
 				DisconnectClient(connectedSocket);
 			}
 		}
 
-		private void LogProcessingException(Exception ex)
+		private string EndpointString(ConnectedSocket connectedSocket)
 		{
-			_Logger.LogWarning(new EventId(), ex, "Error during request processing");
-		}
-
-		private void LogException(Exception ex)
-		{
-			_Logger.LogError(new EventId(), ex, "TCPServer internal error");
+			var ip = (IPEndPoint)connectedSocket.Socket.RemoteEndPoint;
+			return $"{ip.Address}:{ip.Port}";
 		}
 
 		private void DisconnectClient(ConnectedSocket client)
