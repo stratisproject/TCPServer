@@ -21,6 +21,12 @@ namespace TCPServer.ServerImplemetation
 			LocalPort = endpoint.Port;
 		}
 
+		public override string Id
+		{
+			get;
+			set;
+		}
+
 		public override IPAddress RemoteIpAddress
 		{
 			get;

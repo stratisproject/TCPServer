@@ -56,16 +56,22 @@ namespace TCPServer
 
 		CancellationTokenSource _Stopped = new CancellationTokenSource();
 
-		public void Dispose()
+		public Task StopAsync(CancellationToken cancellationToken)
 		{
 			if(!_Stopped.IsCancellationRequested)
 			{
 				_Stopped.Cancel();
-				_AcceptLoopStopped.Wait();
+				_AcceptLoopStopped.Wait(cancellationToken);
 				if(_ListeningSocket != null)
 					_ListeningSocket.AsSafeDisposable().Dispose();
 				_ListeningEndPoint = null;
 			}
+			return Task.CompletedTask;
+		}
+
+		public void Dispose()
+		{
+			StopAsync(default(CancellationToken)).GetAwaiter().GetResult();
 		}
 
 
@@ -80,17 +86,21 @@ namespace TCPServer
 		Socket _ListeningSocket;
 
 		object l = new object();
-		public void Start<TContext>(IHttpApplication<TContext> application)
+
+		public Task StartAsync<TContext>(IHttpApplication<TContext> application, CancellationToken cancellationToken)
 		{
+			Socket socket = null;
 			lock(l)
 			{
 				if(_ListeningSocket != null)
 					throw new InvalidOperationException("The server is already started");
-				var socket = Options.CreateSocket();
+				socket = Options.CreateSocket();
 				_ListeningSocket = socket;
 				_ListeningEndPoint = (IPEndPoint)_ListeningSocket.LocalEndPoint;
-				var unused = StartAsync(socket, application);
+
 			}
+			var unused = StartAsync(socket, application);
+			return Task.CompletedTask;
 		}
 
 
