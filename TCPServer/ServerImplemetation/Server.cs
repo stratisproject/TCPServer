@@ -230,7 +230,7 @@ namespace TCPServer
 				}
 
 			}
-			catch(OperationCanceledException ex)
+			catch(OperationCanceledException)
 			{
 				if(connectedSocket.Socket.Connected)
 				{

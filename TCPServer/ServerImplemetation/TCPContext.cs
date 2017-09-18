@@ -41,6 +41,7 @@ namespace TCPServer.ServerImplemetation
 
 		public override WebSocketManager WebSockets => null;
 
+		[Obsolete]
 		public override AuthenticationManager Authentication => null;
 
 		public override ClaimsPrincipal User
