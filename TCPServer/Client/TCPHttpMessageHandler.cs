@@ -228,7 +228,12 @@ namespace TCPServer.Client
 				try
 				{
 					Socket s = new Socket(possibleAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-					s.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
+                    try
+                    {
+                        // Windows default to true, but some linux distro does not support this
+                        s.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, false);
+                    }
+                    catch(SocketException) { }
 					await s.ConnectAsync(new IPEndPoint(possibleAddress, endpoint.Port), cancellation).ConfigureAwait(false);
 					return s;
 				}
