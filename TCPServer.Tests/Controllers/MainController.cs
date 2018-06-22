@@ -22,6 +22,7 @@ namespace TCPServer.Tests.Controllers
 			return Task.CompletedTask;
 		}
 	}
+    
 	public class MainController : Controller
 	{
 		[HttpGet]

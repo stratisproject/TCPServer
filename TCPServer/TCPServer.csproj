@@ -4,15 +4,13 @@
 		<Company>Nicolas Dorier</Company>
 		<Copyright>Copyright © Nicolas Dorier</Copyright>
 		<Description>For replacing Kestrel by a simpler TCP server</Description>
-		<TargetFramework>netcoreapp2.0</TargetFramework>
-		<Version>1.0.13.1</Version>
+		<TargetFramework>netcoreapp2.1</TargetFramework>
+		<Version>1.0.14.1</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.AspNetCore.Hosting" Version="2.0.0" />
-		<PackageReference Include="Microsoft.AspNetCore.Hosting.Server.Abstractions" Version="2.0.0" />
-		<PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.0.0" />
-		<PackageReference Include="System.Buffers" Version="4.4.0" />
+		<PackageReference Include="Microsoft.AspNetCore.App" Version="2.1.0" />
+		<PackageReference Include="System.Buffers" Version="4.5.0" />
 		<PackageReference Include="System.Net.NameResolution" Version="4.3.0" />
 	</ItemGroup>
 

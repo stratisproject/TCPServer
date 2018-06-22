@@ -33,6 +33,8 @@ namespace TCPServer.Tests
 
 			services
 				.AddMvcCore()
+                .AddApplicationPart(typeof(Startup).Assembly)
+                .AddControllersAsServices()
 				.AddJsonFormatters()
 				.AddFormatterMappings();
 		}
